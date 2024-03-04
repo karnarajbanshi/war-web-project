@@ -1,53 +1,88 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
-                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-    
-    <groupId>koddas.web.war</groupId>
-    <artifactId>wwp</artifactId>
-    <version>1.0.0</version>
-    <packaging>war</packaging>
-    
-    <name>WAR Web Project</name>
-    <description>A very simple Maven-enabled WAR web project</description>
-    
-    <dependencies>
-        <dependency>
-            <groupId>com.google.code.gson</groupId>
-            <artifactId>gson</artifactId>
-            <version>2.8.8</version> <!-- Updated version to latest -->
-        </dependency>
-        <dependency>
-            <groupId>javax.ws.rs</groupId>
-            <artifactId>javax.ws.rs-api</artifactId>
-            <version>2.1</version> <!-- Updated version to latest -->
-            <scope>provided</scope>
-        </dependency>
-    </dependencies>
-    
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.8.1</version> <!-- Updated version to latest -->
-                <configuration>
-                    <source>1.8</source> <!-- Changed to Java 8 -->
-                    <target>1.8</target> <!-- Changed to Java 8 -->
-                </configuration>
-            </plugin>
-            <!-- Exclude XStream dependency from Maven War plugin -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-war-plugin</artifactId>
-                <version>3.3.1</version> <!-- Updated version to latest -->
-                <configuration>
-                    <failOnMissingWebXml>false</failOnMissingWebXml>
-                    <packagingExcludes>WEB-INF/lib/xstream-*.jar</packagingExcludes>
-                </configuration>
-            </plugin>
-            <!-- Add other necessary plugins here -->
-        </plugins>
-    </build>
-</project>
+pipeline {
+  agent any
+  stages {
+    stage('BuildApplication') {
+      steps {
+         sh 'mvn -f pom.xml clean package'
+      }
+      post {
+        success {
+            echo "we are archiving the artifact"
+            archiveArtifacts artifacts: '**/*.war', followSymlinks: false
+        }
+      }
+    }
+    stage('CreateTomcatImage') {
+      steps {
+        echo "Building docker image"
+        sh '''
+        original_pwd=$(pwd -P)
+        pwd
+        docker build -t karnarajbanshi/webappimg:$BUILD_NUMBER . -f Dockerfile
+        docker push karnarajbanshi/webappimg:$BUILD_NUMBER # Push the built image to a repository
+        cd $original_pwd
+        '''
+      }
+    }
+    stage('Deploy in QA instance') {
+      steps {
+        echo "We are deploying the app"
+        sh '''
+        docker container stop tomcatlocalinstance || true
+        docker container rm tomcatlocalinstance  || true
+        docker pull karnarajbanshi/webappimg:$BUILD_NUMBER # Pull the image from the repository
+        docker container run -itd --name tomcatlocalinstance -p 8083:8080 karnarajbanshi/webappimg:$BUILD_NUMBER
+        '''
+      }
+    }
+    stage('Deploy in Staging instance') {
+      steps {
+        timeout(time:5, unit:'MINUTES'){
+            input message: 'Approve the staging deployment'
+        }
+        echo "We are deploying the app in staging env"
+        sh '''
+        docker container stop tomcatstaginginstance || true
+        docker container rm tomcatstaginginstance || true
+        docker pull karnarajbanshi/webappimg:$BUILD_NUMBER # Pull the image from the repository
+        docker container run -itd --name tomcatstaginginstance -p 8084:8080 karnarajbanshi/webappimg:$BUILD_NUMBER
+        '''
+      }
+    }
+  }
+  post {
+    always {
+      mail to: 'karnaraj05@gmail.com',
+      subject: "Job '${JOB_NAME}' (${BUILD_NUMBER}) is waiting for input",
+      body: "Please go to ${BUILD_URL} and verify the build"
+    }
+    success {
+      mail to: 'karnaraj05@gmail.com',
+      subject: 'BUILD SUCCESS NOTIFICATION',
+      body: """Hi Team,
+
+Build #$BUILD_NUMBER is successful, please go through the URL
+
+$BUILD_URL
+
+and verify the details.
+
+Regards,
+DevOps Team"""
+    }
+    failure {
+      mail to: 'karna05@outlook.com',
+      subject: 'BUILD FAILED NOTIFICATION',
+      body: """Hi Team,
+
+Build #$BUILD_NUMBER is unsuccessful, please go through the URL
+
+$BUILD_URL
+
+and verify the details.
+
+Regards,
+DevOps Team"""
+    }
+  }
+}
