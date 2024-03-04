@@ -12,11 +12,6 @@
     <name>WAR Web Project</name>
     <description>A very simple Maven-enabled WAR web project</description>
     
-    <properties>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
-    </properties>
-    
     <dependencies>
         <dependency>
             <groupId>com.google.code.gson</groupId>
@@ -38,8 +33,18 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.8.1</version> <!-- Updated version to latest -->
                 <configuration>
-                    <source>${maven.compiler.source}</source>
-                    <target>${maven.compiler.target}</target>
+                    <source>1.8</source> <!-- Changed to Java 8 -->
+                    <target>1.8</target> <!-- Changed to Java 8 -->
+                </configuration>
+            </plugin>
+            <!-- Exclude XStream dependency from Maven War plugin -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-war-plugin</artifactId>
+                <version>3.3.1</version> <!-- Updated version to latest -->
+                <configuration>
+                    <failOnMissingWebXml>false</failOnMissingWebXml>
+                    <packagingExcludes>WEB-INF/lib/xstream-*.jar</packagingExcludes>
                 </configuration>
             </plugin>
             <!-- Add other necessary plugins here -->
